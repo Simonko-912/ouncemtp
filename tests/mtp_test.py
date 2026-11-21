@@ -268,7 +268,25 @@ def run(root, mps_label):
     payload = rnd.randbytes(2 * (1 << 20) + 333)
     rc, rp, _ = h.op(0x100C, (STORAGE, 0xFFFFFFFF), data_out=object_info("unknown_len.bin", 0xFFFFFFFF))
     rc, _, _ = h.op(0x100D, (), data_out=payload, unknown_len=True)
+    # unknown-length SendObject
     check(rc == OK and open(os.path.join(root, "unknown_len.bin"), "rb").read() == payload, "unknown-length SendObject")
+
+    # issue #1 regression: size + 12 an exact multiple of the max packet size.
+    # The host ends such a phase with the spec-mandated trailing ZLP; if the
+    # responder replies before consuming it, both sides wait on each other and
+    # every later transfer on the pipe desynchronises.
+    for k in (0, 2, 7):
+        sz = k * MPS - 12 if k else MPS - 12
+        payload = rnd.randbytes(sz)
+        nm = f"zlp_exact_{sz}.bin"
+        rc, rp, _ = h.op(0x100C, (STORAGE, 0xFFFFFFFF), data_out=object_info(nm, sz))
+        rc, _, _ = h.op(0x100D, (), data_out=payload, mode="glued")
+        check(rc == OK, f"ZLP-exact upload {nm} rc={rc:#x}")
+        check(open(os.path.join(root, nm), "rb").read() == payload, f"ZLP-exact content {nm}")
+        # pipe must still be in sync right after: next upload must work too
+        rc, rp2, _ = h.op(0x100C, (STORAGE, 0xFFFFFFFF), data_out=object_info(nm + ".next", 17))
+        rc, _, _ = h.op(0x100D, (), data_out=b"sync-after-zlp-1234")
+        check(rc == OK, f"pipe in sync after ZLP-exact {nm}")
 
     # SendObjectInfo size disagrees with the data header: the header wins
     for announced, real in ((100, 5000), (3 * (1 << 20), 700), (10, 2 * (1 << 20) + MPS - 12)):

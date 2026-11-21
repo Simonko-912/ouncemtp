@@ -336,6 +336,16 @@ static int setup_device(usb_plan_t *p, bool quiet)
             if (!quiet) { rc_short(s, sizeof(s), rc); status_log("USB: USB 1 descriptor refused (%s), skipped", s); }
         }
     }
+    TRY("register interface", register_interface());
+    TRY("string descriptors", usbDsAddUsbStringDescriptor(&iInterface, "MTP"));  /* Windows keys on this string */
+
+    /* The SuperSpeed slot is registered last so its descriptor framing (and
+     * the string replies served under it) is cached from the fully-registered
+     * set: BOS + SS device descriptor applied after every string exists means
+     * GET_DESCRIPTOR replies on the SS link are framed for the 512-byte SS
+     * EP0. Registering SS earlier made Windows read the serial-number string
+     * with High-Speed chunking and reject it truncated ("invalid serial
+     * number string descriptor" -> Code 10). */
     if (p->super) {
         rc = usbDsSetBinaryObjectStore(k_bos, sizeof(k_bos));
         if (R_SUCCEEDED(rc)) {
@@ -348,9 +358,6 @@ static int setup_device(usb_plan_t *p, bool quiet)
             if (!quiet) { rc_short(s, sizeof(s), rc); status_log("USB: USB 3 descriptor refused (%s), skipped", s); }
         }
     }
-
-    TRY("register interface", register_interface());
-    TRY("string descriptors", usbDsAddUsbStringDescriptor(&iInterface, "MTP"));  /* Windows keys on this string */
 
     mtp_descs_t d;
     fill_descs(&d, g_intf->interface_index, iInterface);

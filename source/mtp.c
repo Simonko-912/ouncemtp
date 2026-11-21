@@ -132,6 +132,7 @@ enum {
 #define BUF_SZ          (1u << 20)
 #define CMD_BUF_SZ      0x1000u
 #define XFER_TIMEOUT_MS 20000u
+#define ZLP_DRAIN_MS    250u     /* bounded wait for the trailing ZLP */
 #define DATASET_CAP     (16u << 20)
 
 static const uint16_t k_ops[] = {
@@ -494,6 +495,25 @@ static int rx_stream(uint64_t hint, sink_fn sink, void *ctx, rx_result_t *res, b
 
         if (done) {
             res->complete = (hdr_have == 12) && (expected == LEN_UNKNOWN || res->got == expected);
+
+            /* When the announced byte count is met exactly on a packet
+             * boundary, the host still owes one transfer: the terminating
+             * zero-length packet the bulk spec requires after a final full
+             * packet. Consume it here, before the caller writes its response,
+             * or both sides wait on each other: the host waits for the ZLP
+             * to be taken, we wait for the host to read our response. That
+             * deadlocks every file whose size + 12 is a multiple of the max
+             * packet size (issue #1), and desynchronises the pipe for every
+             * file after it. A short packet already delivered the terminator
+             * inside this read, hence the !short_pkt guard. Hosts that skip
+             * the ZLP (against spec) only cost ZLP_DRAIN_MS. */
+            if (!short_pkt && expected != LEN_UNKNOWN && res->got == expected) {
+                uint32_t zn = 0;
+                if (tp_read_begin(g_buf[cur], mps) == TP_OK) {
+                    int zr = tp_read_end(&zn, ZLP_DRAIN_MS);
+                    if (zr == TP_DISCONNECTED || zr == TP_STOPPED) return zr;
+                }
+            }
             return TP_OK;
         }
         cur ^= 1;
