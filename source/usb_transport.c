@@ -207,15 +207,18 @@ static const struct usb_ss_endpoint_companion_descriptor k_comp_irq = {
     .wBytesPerInterval = 0x18,
 };
 
-/* BOS: USB 2.0 LPM + SuperSpeed capability, required for USB 3 hosts.
- * SS capability bFunctionalitySupport = 2 (High-Speed): we register Full,
- * High and SuperSpeed descriptor sets, so the host may fall back to High-
- * Speed if SuperSpeed link training hiccups. With minimum = SuperSpeed (3)
- * a stubborn USB4 chain cannot settle on HS: Windows resets the port a few
- * times and then drops the device entirely. */
-static const u8 k_bos[0x16] = {
-    0x05, USB_DT_BOS, 0x16, 0x00, 0x02,
-    0x07, USB_DT_DEVICE_CAPABILITY, 0x02, 0x02, 0x00, 0x00, 0x00,
+/* BOS: SuperSpeed capability only.
+ * The USB 2.0 extension capability (the old first entry) is what tells an
+ * xHCI Type-C port it may put the link into LPM/U1/U2 between polls. The
+ * Switch usb:ds side does not survive those states cleanly, so every
+ * Type-C-to-Type-C link (even a USB 2-only cable) entered a U1/U2 -> missed
+ * resume -> port-reset loop: a handful of reconnects, then Windows stops
+ * trying and the device disappears. Type-A hosts skip HS LPM, which is why
+ * C-to-A always worked. Dropping the capability makes the host keep the
+ * link in U0. SS capability keeps bFunctionalitySupport = 2 so SS training
+ * failures can still settle on High-Speed. */
+static const u8 k_bos[0x0F] = {
+    0x05, USB_DT_BOS, 0x0F, 0x00, 0x01,
     0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0E, 0x00, 0x02, 0x00, 0x00, 0x00,
 };
 
