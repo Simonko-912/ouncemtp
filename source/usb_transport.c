@@ -114,10 +114,19 @@ typedef struct {
     bool       super;   /* also register USB 3 SuperSpeed */
 } usb_plan_t;
 
+/* Default plans register Full + High Speed only (last flag = SuperSpeed).
+ * Type-C hosts enumerate through the xHCI path and pair the SuperSpeed
+ * device descriptor (EP0 exponent 9 = 512) with string reads the console
+ * gadget actually frames at 64-byte chunks -> "invalid serial number
+ * string descriptor", reset loop, then Windows gives up. A-to-A/A-to-C
+ * links take the HS-only descriptor set and work everywhere, so that set
+ * is what we present on every cable. Nintendo's own album-transfer tool
+ * hits the same loop with the SS set registered, which confirms it is the
+ * gadget-side descriptor mix, not a specific host. */
 /* libnx / haze on Switch 1 (11.0.0+). */
-static const usb_plan_t k_libnx_plan = { 10, BUF_MAP, false, false, true, true };
+static const usb_plan_t k_libnx_plan = { 10, BUF_MAP, false, false, true, false };
 /* Switch 2, found by probe() on hardware: same arguments, cmd 6. */
-static const usb_plan_t k_switch2_plan = { 6, BUF_MAP, false, false, true, true };
+static const usb_plan_t k_switch2_plan = { 6, BUF_MAP, false, false, true, false };
 
 static const char *buf_name(buf_kind_t b) { return b == BUF_AUTO ? "auto" : b == BUF_PTR ? "ptr" : "map"; }
 
@@ -575,6 +584,7 @@ int tp_init(void)
         status_log("!! USB: no configuration form worked (log above)");
         return TP_ERROR;
     }
+    found.super = false;   /* see k_switch2_plan comment: HS-only on all cables */
     status_log("USB: retry with cmd %u %s%s%s, usb1 %s, usb3 %s", (unsigned)found.cmd, buf_name(found.buf),
                found.pre11 ? "+pre11" : "", found.blob ? " one-call" : "",
                found.full ? "on" : "off", found.super ? "on" : "off");
