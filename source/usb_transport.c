@@ -196,7 +196,10 @@ typedef struct {
 static const struct usb_ss_endpoint_companion_descriptor k_comp_bulk = {
     .bLength = sizeof(struct usb_ss_endpoint_companion_descriptor),
     .bDescriptorType = USB_DT_SS_ENDPOINT_COMPANION,
-    .bMaxBurst = 0x0F,           /* 16-packet bursts: matters for USB 3 throughput */
+    .bMaxBurst = 0x07,           /* 8x1024 = 8 KiB bursts: 16 was too much for
+                                  * some USB4 hub resource tables, which then
+                                  * reset-looped the port; still plenty for
+                                  * USB 3 throughput on this link. */
 };
 static const struct usb_ss_endpoint_companion_descriptor k_comp_irq = {
     .bLength = sizeof(struct usb_ss_endpoint_companion_descriptor),
@@ -204,11 +207,16 @@ static const struct usb_ss_endpoint_companion_descriptor k_comp_irq = {
     .wBytesPerInterval = 0x18,
 };
 
-/* BOS: USB 2.0 LPM + SuperSpeed capability, required for USB 3 hosts. */
+/* BOS: USB 2.0 LPM + SuperSpeed capability, required for USB 3 hosts.
+ * SS capability bFunctionalitySupport = 2 (High-Speed): we register Full,
+ * High and SuperSpeed descriptor sets, so the host may fall back to High-
+ * Speed if SuperSpeed link training hiccups. With minimum = SuperSpeed (3)
+ * a stubborn USB4 chain cannot settle on HS: Windows resets the port a few
+ * times and then drops the device entirely. */
 static const u8 k_bos[0x16] = {
     0x05, USB_DT_BOS, 0x16, 0x00, 0x02,
     0x07, USB_DT_DEVICE_CAPABILITY, 0x02, 0x02, 0x00, 0x00, 0x00,
-    0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0E, 0x00, 0x03, 0x00, 0x00, 0x00,
+    0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0E, 0x00, 0x02, 0x00, 0x00, 0x00,
 };
 
 static void fill_descs(mtp_descs_t *d, u8 slot, u8 iInterface)
